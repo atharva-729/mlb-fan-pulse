@@ -1,0 +1,22 @@
+# Secrets
+.env
+
+# Data: cached API responses and derived tables stay local (see licensing note in README)
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Notebooks / editors
+.ipynb_checkpoints/
+.vscode/
+.idea/
