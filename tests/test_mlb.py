@@ -36,8 +36,8 @@ def feed():
             "datetime": {"officialDate": "2025-09-30", "dateTime": "2025-09-30T22:08:00Z"},
             "status": {"abstractGameState": "Final"},
             "teams": {
-                "home": {"name": "New York Yankees", "abbreviation": "NYY"},
-                "away": {"name": "Boston Red Sox", "abbreviation": "BOS"},
+                "home": {"name": "New York Yankees", "abbreviation": "NYY", "teamName": "Yankees"},
+                "away": {"name": "Boston Red Sox", "abbreviation": "BOS", "teamName": "Red Sox"},
             },
         },
         "liveData": {

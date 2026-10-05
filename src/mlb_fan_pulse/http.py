@@ -12,7 +12,7 @@ import logging
 import re
 import time
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Collection, Mapping
 from urllib.parse import urlencode, urlsplit
 
 import requests
@@ -81,6 +81,7 @@ def get_json(
     *,
     session: requests.Session | None = None,
     cache_if: Callable[[Any], bool] | None = None,
+    retry_statuses: Collection[int] = RETRY_STATUSES,
 ) -> Any:
     """GET ``url`` and return parsed JSON, reading from the cache when present.
 
@@ -116,7 +117,7 @@ def get_json(
             last_error = f"HTTP {response.status_code}"
             if response.status_code == 429:
                 delay = _rate_limit_sleep(response, attempt)
-            elif response.status_code in RETRY_STATUSES:
+            elif response.status_code in retry_statuses:
                 delay = BACKOFF_SECONDS * 2**attempt
             else:
                 raise HttpError(f"GET {full} failed: {last_error}: {response.text[:200]}")

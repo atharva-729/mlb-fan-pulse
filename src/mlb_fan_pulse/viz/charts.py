@@ -75,6 +75,32 @@ def win_prob_figure(game: pd.Series, plays: pd.DataFrame, win_prob: pd.DataFrame
     return figure
 
 
+def comments_per_minute(comments: pd.DataFrame) -> pd.Series:
+    """Comment count per UTC minute, with empty minutes filled in as zero."""
+    return comments.set_index("created_utc").resample("1min").size().rename("comments")
+
+
+def comment_volume_figure(game: pd.Series, comments: pd.DataFrame, title_suffix: str = "") -> go.Figure:
+    per_minute = comments_per_minute(comments)
+    figure = go.Figure(
+        go.Bar(
+            x=per_minute.index,
+            y=per_minute.values,
+            marker_color="#1f4e79",
+            hovertemplate="%{x|%H:%M} UTC<br>%{y} comments<extra></extra>",
+        )
+    )
+    figure.add_vline(x=game.start_time_utc, line_dash="dot", line_color="#c0392b")
+    figure.update_layout(
+        title=f"Comments per minute: {game.away_team} @ {game.home_team}, {game.date}{title_suffix}",
+        xaxis_title="Time (UTC), dotted line = first pitch",
+        yaxis_title="Comments per minute",
+        template="plotly_white",
+        bargap=0,
+    )
+    return figure
+
+
 def write_html(figure: go.Figure, name: str) -> Path:
     path = reports_dir() / name
     path.parent.mkdir(parents=True, exist_ok=True)
