@@ -1,0 +1,16 @@
+# Games to process.
+#
+# game_pk is looked up from the MLB schedule endpoint (Phase 1), never guessed.
+# Each subreddit names its own game-thread bot, since team subreddits differ.
+#
+# Example shape:
+#
+# games:
+#   - game_pk: <from schedule>
+#     date: 2025-09-30
+#     subreddits:
+#       - name: baseball
+#         bot: BaseballBot
+#         thread_ids: []      # filled in by thread discovery, or set by hand
+
+games: []

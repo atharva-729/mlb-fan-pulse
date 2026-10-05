@@ -1,0 +1,8 @@
+# Player nickname -> MLB person ID. Grow this as you go (Phase 5).
+#
+# Example shape:
+#
+# nicknames:
+#   "<nickname>": <mlb person id>
+
+nicknames: {}
