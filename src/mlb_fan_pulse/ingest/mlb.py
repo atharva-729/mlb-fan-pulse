@@ -97,6 +97,9 @@ def build_games(feed: dict, series_desc: str | None = None) -> pd.DataFrame:
                 "away_team": away["name"],
                 "home_abbr": home["abbreviation"],
                 "away_abbr": away["abbreviation"],
+                # Short club names ("Red Sox"), which is what game-thread titles use.
+                "home_name": home["teamName"],
+                "away_name": away["teamName"],
                 "home_score": home_score,
                 "away_score": away_score,
                 "final_score": f"{away['abbreviation']} {away_score} @ {home['abbreviation']} {home_score}",

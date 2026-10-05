@@ -30,6 +30,10 @@ def build_parser() -> argparse.ArgumentParser:
     mlb.add_argument("--game", type=int, required=True, metavar="GAME_PK", help="MLB gamePk")
     mlb.set_defaults(func=cmd_mlb)
 
+    reddit = subparsers.add_parser("reddit", help="find game threads and pull their comments")
+    reddit.add_argument("--game", type=int, required=True, metavar="GAME_PK", help="MLB gamePk")
+    reddit.set_defaults(func=cmd_reddit)
+
     run = subparsers.add_parser("run", help="run the full pipeline for one game")
     run.add_argument("--game", type=int, required=True, metavar="GAME_PK", help="MLB gamePk")
     run.set_defaults(func=cmd_run)
@@ -76,6 +80,55 @@ def cmd_mlb(args: argparse.Namespace) -> int:
     path = charts.write_html(charts.win_prob_figure(game, tables["plays"], tables["win_prob"]), f"{args.game}_win_prob.html")
     print(f"\nSanity check passed: last play score matches the linescore ({game.final_score}).")
     print(f"Win probability chart: {path}")
+    return 0
+
+
+def cmd_reddit(args: argparse.Namespace) -> int:
+    import pandas as pd
+
+    from mlb_fan_pulse import storage
+    from mlb_fan_pulse.ingest import mlb, reddit
+    from mlb_fan_pulse.process import clean
+    from mlb_fan_pulse.viz import charts
+
+    game = mlb.ingest_game(args.game)["games"].iloc[0]
+    try:
+        tables = reddit.ingest_game(game)
+    except reddit.ThreadLookupError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+
+    threads, raw = tables["threads"], tables["comments_raw"]
+    comments, dropped = clean.clean_comments(raw)
+    storage.write_table("comments", args.game, comments)
+
+    print(f"{game.away_team} @ {game.home_team}, {game.date}\n")
+    for thread in threads.itertuples():
+        fetched = int((raw["thread_id"] == thread.thread_id).sum())
+        kept = int((comments["thread_id"] == thread.thread_id).sum())
+        print(f"r/{thread.subreddit} {thread.thread_type} thread {thread.thread_id}: {thread.title}")
+        print(f"  Reddit count {thread.num_comments}, fetched {fetched}, kept after cleaning {kept}")
+    print("\nDropped: " + ", ".join(f"{reason} {count}" for reason, count in dropped.items()))
+
+    game_thread_ids = threads.loc[threads["thread_type"] == "game", "thread_id"]
+    game_comments = comments[comments["thread_id"].isin(game_thread_ids)]
+    per_minute = charts.comments_per_minute(game_comments)
+    print(
+        f"\nGame thread: {len(game_comments)} comments from {game_comments['created_utc'].min():%H:%M} "
+        f"to {game_comments['created_utc'].max():%m-%d %H:%M} UTC, "
+        f"peak {per_minute.max()} per minute at {per_minute.idxmax():%H:%M} UTC"
+    )
+
+    print("\n20 random comments from the game thread:")
+    for row in game_comments.sample(n=min(20, len(game_comments)), random_state=0).sort_values("created_utc").itertuples():
+        flair = "no flair" if pd.isna(row.author_flair_text) else row.author_flair_text
+        body = " ".join(row.body.split())
+        print(f"  [{row.created_utc:%H:%M:%S}] ({flair}) {body[:160]}")
+
+    path = charts.write_html(
+        charts.comment_volume_figure(game, game_comments, " (game thread)"), f"{args.game}_comment_volume.html"
+    )
+    print(f"\nComments-per-minute chart: {path}")
     return 0
 
 
