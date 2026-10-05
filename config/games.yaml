@@ -13,4 +13,12 @@
 #         bot: BaseballBot
 #         thread_ids: []      # filled in by thread discovery, or set by hand
 
-games: []
+games:
+  # Dev game: 2025 AL Wild Card Series, Game 1, Red Sox @ Yankees.
+  # game_pk from: mlb-fan-pulse find-game --date 2025-09-30 --home Yankees --away "Red Sox"
+  - game_pk: 813074
+    date: 2025-09-30
+    subreddits:
+      - name: baseball
+        bot: BaseballBot
+        thread_ids: []

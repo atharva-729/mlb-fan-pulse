@@ -12,7 +12,7 @@ import logging
 import re
 import time
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 from urllib.parse import urlencode, urlsplit
 
 import requests
@@ -80,8 +80,13 @@ def get_json(
     params: Mapping[str, Any] | None = None,
     *,
     session: requests.Session | None = None,
+    cache_if: Callable[[Any], bool] | None = None,
 ) -> Any:
-    """GET ``url`` and return parsed JSON, reading from the cache when present."""
+    """GET ``url`` and return parsed JSON, reading from the cache when present.
+
+    ``cache_if`` lets a caller refuse to cache a response that isn't final yet
+    (a game still in progress), since a cached response is never re-fetched.
+    """
     path = cache_path(url, params)
     if path.exists():
         log.debug("cache hit %s", path)
@@ -100,6 +105,9 @@ def get_json(
         else:
             if response.status_code == 200:
                 data = response.json()
+                if cache_if is not None and not cache_if(data):
+                    log.debug("not caching %s (response not final)", full)
+                    return data
                 path.parent.mkdir(parents=True, exist_ok=True)
                 tmp = path.with_suffix(".tmp")
                 tmp.write_text(json.dumps(data), encoding="utf-8")
