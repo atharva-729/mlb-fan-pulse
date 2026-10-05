@@ -81,6 +81,19 @@ def test_client_error_raises_without_retry_or_cache():
     assert not http.cache_path(url).exists()
 
 
+def test_cache_if_false_skips_cache():
+    session = FakeSession([FakeResponse(payload={"final": False}), FakeResponse(payload={"final": True})])
+    url = "https://example.com/live"
+
+    def is_final(data):
+        return data["final"]
+
+    assert http.get_json(url, session=session, cache_if=is_final) == {"final": False}
+    assert not http.cache_path(url).exists()
+    assert http.get_json(url, session=session, cache_if=is_final) == {"final": True}
+    assert http.cache_path(url).exists()
+
+
 def test_gives_up_after_max_retries():
     session = FakeSession([FakeResponse(500)] * http.MAX_RETRIES)
 
