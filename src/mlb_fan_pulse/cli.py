@@ -38,6 +38,10 @@ def build_parser() -> argparse.ArgumentParser:
     timeline.add_argument("--game", type=int, required=True, metavar="GAME_PK", help="MLB gamePk")
     timeline.set_defaults(func=cmd_timeline)
 
+    sentiment = subparsers.add_parser("sentiment", help="aggregate baseline sentiment by fanbase")
+    sentiment.add_argument("--game", type=int, required=True, metavar="GAME_PK", help="MLB gamePk")
+    sentiment.set_defaults(func=cmd_sentiment)
+
     run = subparsers.add_parser("run", help="run the full pipeline for one game")
     run.add_argument("--game", type=int, required=True, metavar="GAME_PK", help="MLB gamePk")
     run.set_defaults(func=cmd_run)
@@ -178,6 +182,76 @@ def cmd_timeline(args: argparse.Namespace) -> int:
         charts.volume_vs_win_prob_figure(game, plays, win_prob, comments), f"{args.game}_volume_vs_win_prob.html"
     )
     print(f"Chart: {path}")
+    return 0
+
+
+def cmd_sentiment(args: argparse.Namespace) -> int:
+    from mlb_fan_pulse import storage
+    from mlb_fan_pulse.process import sentiment
+    from mlb_fan_pulse.viz import charts
+
+    try:
+        tables = {name: storage.read_table(name, args.game) for name in ("games", "plays", "win_prob", "threads", "comments")}
+    except FileNotFoundError as exc:
+        print(f"missing table ({exc.filename}); run `mlb` and `reddit` for this game first", file=sys.stderr)
+        return 1
+    scores_path = storage.table_path("comment_scores", args.game)
+    if not scores_path.exists():
+        print(
+            f"no baseline scores at {scores_path}\n"
+            f"Run notebooks/baseline_sentiment_colab.ipynb on Google Colab with "
+            f"{storage.table_path('comments', args.game)}, then save its download to that path.",
+            file=sys.stderr,
+        )
+        return 1
+
+    game, plays, win_prob = tables["games"].iloc[0], tables["plays"], tables["win_prob"]
+    game_thread_ids = tables["threads"].loc[tables["threads"]["thread_type"] == "game", "thread_id"]
+    comments = tables["comments"][tables["comments"]["thread_id"].isin(game_thread_ids)]
+    scored = comments.merge(storage.read_table("comment_scores", args.game), on="comment_id", how="inner")
+    if len(scored) < len(comments):
+        print(f"warning: {len(comments) - len(scored)} of {len(comments)} comments have no score", file=sys.stderr)
+    scored = sentiment.with_fanbase(scored, game)
+
+    halves = sentiment.half_innings(plays)
+    tagged = sentiment.assign_half_inning(scored, halves)
+    per_half = sentiment.by_half_inning(tagged, halves)
+    storage.write_table("sentiment_half_inning", args.game, per_half)
+    storage.write_table("sentiment_minute", args.game, sentiment.by_minute(tagged))
+
+    names = {"home": game.home_name, "away": game.away_name, "other": "other teams", "none": "no flair"}
+    print(f"{game.away_team} @ {game.home_team}, {game.date} ({game.final_score})")
+    print(f"{len(scored)} scored game-thread comments, {len(tagged)} during the game\n")
+    print("In-game comments and mean sentiment by fanbase:")
+    for side, group in tagged.groupby("fanbase"):
+        print(f"  {names[side]:<12}{len(group):>6}  {group['base_sentiment'].mean():+.2f}")
+
+    wide = per_half.pivot(index="half_inning", columns="fanbase", values="sentiment").reindex(halves["half_inning"])
+    print(f"\nMean sentiment by half-inning:\n{'':<6}{game.home_name + ' fans':>14}{game.away_name + ' fans':>14}")
+    for half_inning, row in wide.iterrows():
+        print(f"{half_inning:<6}{row.get('home', float('nan')):>+14.2f}{row.get('away', float('nan')):>+14.2f}")
+
+    reactions = sentiment.scoring_reactions(scored, plays)
+    print("\nGut check, sentiment change in the 3 minutes after each scoring play vs. the 3 before:")
+    passed = 0
+    for row in reactions.itertuples():
+        other_side = "home" if row.scoring_side == "away" else "away"
+        scoring_change = getattr(row, f"{row.scoring_side}_after") - getattr(row, f"{row.scoring_side}_before")
+        other_change = getattr(row, f"{other_side}_after") - getattr(row, f"{other_side}_before")
+        ok = scoring_change > 0 > other_change
+        passed += ok
+        print(
+            f"  {row.half_inning} {row.end_time_utc:%H:%M} {names[row.scoring_side]} score: "
+            f"{names[row.scoring_side]} fans {scoring_change:+.2f} (n={getattr(row, f'{row.scoring_side}_n_after')}), "
+            f"{names[other_side]} fans {other_change:+.2f} (n={getattr(row, f'{other_side}_n_after')})"
+            f"  {'as expected' if ok else 'NOT as expected'}"
+        )
+    print(f"  {passed} of {len(reactions)} scoring plays moved both fanbases the expected way")
+
+    path = charts.write_html(
+        charts.sentiment_by_fanbase_figure(game, plays, win_prob, per_half), f"{args.game}_sentiment_by_fanbase.html"
+    )
+    print(f"\nChart: {path}")
     return 0
 
 

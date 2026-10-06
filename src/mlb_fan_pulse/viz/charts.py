@@ -195,6 +195,60 @@ def volume_vs_win_prob_figure(game: pd.Series, plays: pd.DataFrame, win_prob: pd
     return figure
 
 
+def sentiment_by_fanbase_figure(
+    game: pd.Series, plays: pd.DataFrame, win_prob: pd.DataFrame, half_inning_sentiment: pd.DataFrame
+) -> go.Figure:
+    """Each fanbase's mean sentiment per half-inning, over the win probability curve."""
+    timeline = win_prob_timeline(plays, win_prob)
+    figure = make_subplots(specs=[[{"secondary_y": True}]])
+
+    figure.add_trace(
+        go.Scatter(
+            x=[timeline["start_time_utc"].iloc[0], *timeline["end_time_utc"]],
+            y=[timeline["home_wp_before"].iloc[0], *timeline["home_wp_after"]],
+            mode="lines",
+            line={"shape": "hv", "width": 1.5, "color": "#b8c4d0"},
+            name=f"{game.home_abbr} win probability",
+            hovertemplate="%{x|%H:%M:%S} UTC<br>%{y:.0%}<extra></extra>",
+        ),
+        secondary_y=True,
+    )
+
+    scoring = timeline[timeline["is_scoring_play"]]
+    for play in scoring.itertuples():
+        figure.add_vline(x=play.end_time_utc, line_dash="dot", line_color="#999999", line_width=1)
+
+    sides = {"home": (f"{game.home_name} fans", "#1f4e79"), "away": (f"{game.away_name} fans", "#c0392b")}
+    for side, (label, color) in sides.items():
+        subset = half_inning_sentiment[half_inning_sentiment["fanbase"] == side]
+        figure.add_trace(
+            go.Scatter(
+                x=subset["mid_utc"],
+                y=subset["sentiment"],
+                mode="lines+markers",
+                line={"width": 2.5, "color": color},
+                name=label,
+                text=[f"{row.half_inning}: {row.comments} comments" for row in subset.itertuples()],
+                hovertemplate="%{text}<br>mean sentiment %{y:+.2f}<extra></extra>",
+            ),
+            secondary_y=False,
+        )
+
+    figure.add_hline(y=0, line_color="#dddddd", secondary_y=False)
+    figure.update_layout(
+        title=f"Fan sentiment by fanbase: {game.away_team} @ {game.home_team}, {game.date} ({game.final_score})",
+        template="plotly_white",
+        hovermode="closest",
+        legend={"orientation": "h", "y": -0.15},
+    )
+    figure.update_xaxes(title_text="Time (UTC), one point per half-inning, dotted lines = scoring plays")
+    figure.update_yaxes(title_text="Mean baseline sentiment (-1 to 1)", secondary_y=False)
+    figure.update_yaxes(
+        title_text=f"{game.home_team} win probability", range=[0, 1], tickformat=".0%", showgrid=False, secondary_y=True
+    )
+    return figure
+
+
 def write_html(figure: go.Figure, name: str) -> Path:
     path = reports_dir() / name
     path.parent.mkdir(parents=True, exist_ok=True)
