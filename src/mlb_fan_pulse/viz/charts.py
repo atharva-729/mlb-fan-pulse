@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 from mlb_fan_pulse import config
 
@@ -97,6 +98,99 @@ def comment_volume_figure(game: pd.Series, comments: pd.DataFrame, title_suffix:
         yaxis_title="Comments per minute",
         template="plotly_white",
         bargap=0,
+    )
+    return figure
+
+
+BIG_SWING = 0.10
+# Fans react over the couple of minutes after a play ends (stream lag, typing).
+REACTION_MINUTES = 2
+
+
+def key_plays(timeline: pd.DataFrame, threshold: float = BIG_SWING) -> pd.DataFrame:
+    """Scoring plays and plays that moved win probability by more than ``threshold``."""
+    big_swing = timeline["wp_delta"].abs() > threshold
+    plays = timeline[timeline["is_scoring_play"] | big_swing].copy()
+    plays["kind"] = plays["is_scoring_play"].map({True: "Scoring play", False: "Big swing"})
+    return plays
+
+
+def reaction_table(plays: pd.DataFrame, comments: pd.DataFrame) -> pd.DataFrame:
+    """For each play, comments per minute in the ``REACTION_MINUTES`` after it ended."""
+    times = comments["created_utc"].sort_values().reset_index(drop=True)
+    window = pd.Timedelta(minutes=REACTION_MINUTES)
+    starts = times.searchsorted(plays["end_time_utc"])
+    ends = times.searchsorted(plays["end_time_utc"] + window)
+    out = plays.copy()
+    out["reaction_per_min"] = (ends - starts) / REACTION_MINUTES
+    return out
+
+
+def volume_vs_win_prob_figure(game: pd.Series, plays: pd.DataFrame, win_prob: pd.DataFrame, comments: pd.DataFrame) -> go.Figure:
+    """Comment volume per minute (bars) under the home win probability curve (line)."""
+    timeline = win_prob_timeline(plays, win_prob)
+    first_pitch, final_out = timeline["start_time_utc"].iloc[0], timeline["end_time_utc"].iloc[-1]
+    pad = pd.Timedelta(minutes=20)
+    in_view = comments[(comments["created_utc"] >= first_pitch - pad) & (comments["created_utc"] <= final_out + pad)]
+    per_minute = comments_per_minute(in_view)
+
+    figure = make_subplots(specs=[[{"secondary_y": True}]])
+    figure.add_trace(
+        go.Bar(
+            x=per_minute.index + pd.Timedelta(seconds=30),  # centre each bar on its minute
+            y=per_minute.values,
+            name="Comments per minute",
+            marker_color="#b8c4d0",
+            hovertemplate="%{x|%H:%M} UTC<br>%{y} comments<extra></extra>",
+        ),
+        secondary_y=False,
+    )
+
+    figure.add_trace(
+        go.Scatter(
+            x=[first_pitch, *timeline["end_time_utc"]],
+            y=[timeline["home_wp_before"].iloc[0], *timeline["home_wp_after"]],
+            mode="lines",
+            line={"shape": "hv", "width": 2.5, "color": "#1f4e79"},
+            name=f"{game.home_abbr} win probability",
+            hovertemplate="%{x|%H:%M:%S} UTC<br>%{y:.0%}<extra></extra>",
+        ),
+        secondary_y=True,
+    )
+
+    marked = key_plays(timeline)
+    styles = {"Scoring play": ("#c0392b", "circle"), "Big swing": ("#e67e22", "diamond")}
+    for kind, (color, symbol) in styles.items():
+        subset = marked[marked["kind"] == kind]
+        figure.add_trace(
+            go.Scatter(
+                x=subset["end_time_utc"],
+                y=subset["home_wp_after"],
+                mode="markers",
+                marker={"size": 11, "color": color, "symbol": symbol, "line": {"width": 1, "color": "white"}},
+                name=kind if kind == "Scoring play" else f"Big swing (over {BIG_SWING:.0%})",
+                text=[
+                    f"{row.half.title()} {row.inning}: {row.description}<br>"
+                    f"{game.away_abbr} {row.away_score}, {game.home_abbr} {row.home_score} "
+                    f"({game.home_abbr} win probability {row.wp_delta:+.0%})"
+                    for row in subset.itertuples()
+                ],
+                hovertemplate="%{x|%H:%M:%S} UTC<br>%{text}<extra></extra>",
+            ),
+            secondary_y=True,
+        )
+
+    figure.update_layout(
+        title=f"Fan comment volume vs. win probability: {game.away_team} @ {game.home_team}, {game.date} ({game.final_score})",
+        template="plotly_white",
+        bargap=0,
+        hovermode="closest",
+        legend={"orientation": "h", "y": -0.15},
+    )
+    figure.update_xaxes(title_text="Time (UTC)")
+    figure.update_yaxes(title_text="Comments per minute", secondary_y=False, showgrid=False)
+    figure.update_yaxes(
+        title_text=f"{game.home_team} win probability", range=[0, 1], tickformat=".0%", secondary_y=True
     )
     return figure
 

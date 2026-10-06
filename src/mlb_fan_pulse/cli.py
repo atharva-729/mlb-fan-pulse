@@ -34,6 +34,10 @@ def build_parser() -> argparse.ArgumentParser:
     reddit.add_argument("--game", type=int, required=True, metavar="GAME_PK", help="MLB gamePk")
     reddit.set_defaults(func=cmd_reddit)
 
+    timeline = subparsers.add_parser("timeline", help="chart comment volume against win probability")
+    timeline.add_argument("--game", type=int, required=True, metavar="GAME_PK", help="MLB gamePk")
+    timeline.set_defaults(func=cmd_timeline)
+
     run = subparsers.add_parser("run", help="run the full pipeline for one game")
     run.add_argument("--game", type=int, required=True, metavar="GAME_PK", help="MLB gamePk")
     run.set_defaults(func=cmd_run)
@@ -129,6 +133,51 @@ def cmd_reddit(args: argparse.Namespace) -> int:
         charts.comment_volume_figure(game, game_comments, " (game thread)"), f"{args.game}_comment_volume.html"
     )
     print(f"\nComments-per-minute chart: {path}")
+    return 0
+
+
+def cmd_timeline(args: argparse.Namespace) -> int:
+    from mlb_fan_pulse import storage
+    from mlb_fan_pulse.viz import charts
+
+    try:
+        tables = {name: storage.read_table(name, args.game) for name in ("games", "plays", "win_prob", "threads", "comments")}
+    except FileNotFoundError as exc:
+        print(f"missing table ({exc.filename}); run `mlb` and `reddit` for this game first", file=sys.stderr)
+        return 1
+
+    game, plays, win_prob = tables["games"].iloc[0], tables["plays"], tables["win_prob"]
+    game_thread_ids = tables["threads"].loc[tables["threads"]["thread_type"] == "game", "thread_id"]
+    comments = tables["comments"][tables["comments"]["thread_id"].isin(game_thread_ids)]
+
+    timeline = charts.reaction_table(charts.win_prob_timeline(plays, win_prob), comments)
+    marked = charts.key_plays(timeline)
+    in_game = comments[
+        (comments["created_utc"] >= plays["start_time_utc"].min()) & (comments["created_utc"] <= plays["end_time_utc"].max())
+    ]
+    typical = charts.comments_per_minute(in_game).median()
+
+    print(f"{game.away_team} @ {game.home_team}, {game.date} ({game.final_score})")
+    print(f"Typical in-game volume: {typical:.0f} comments per minute (median)\n")
+    print(f"Key plays, with comments per minute in the {charts.REACTION_MINUTES} minutes after each:")
+    print(f"{'end (UTC)':<10}{'inn':<7}{'WP chg':>7}{'c/min':>7}{'x typ':>7}  play")
+    for row in marked.itertuples():
+        inning = f"{row.half[:3].title()} {row.inning}"
+        print(
+            f"{row.end_time_utc:%H:%M:%S}  {inning:<7}{row.wp_delta:>+7.0%}{row.reaction_per_min:>7.0f}"
+            f"{row.reaction_per_min / typical:>6.1f}x  {row.event}: {row.batter_name}"
+        )
+
+    other = timeline.drop(marked.index)
+    print(
+        f"\nMedian reaction: key plays {marked['reaction_per_min'].median():.0f} per minute, "
+        f"all other plays {other['reaction_per_min'].median():.0f} per minute"
+    )
+
+    path = charts.write_html(
+        charts.volume_vs_win_prob_figure(game, plays, win_prob, comments), f"{args.game}_volume_vs_win_prob.html"
+    )
+    print(f"Chart: {path}")
     return 0
 
 
