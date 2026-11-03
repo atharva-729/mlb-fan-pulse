@@ -8,7 +8,7 @@ MLB Fan Pulse lines up Reddit game-thread comments with MLB play-by-play and win
 2. **Moments:** spikes in comment volume or sentiment, each linked to the play that caused it, with a short summary of what fans were saying.
 3. **Perception vs. performance:** how fans talked about each player compared with what that player actually contributed. The interesting part is where the two disagree.
 
-This is an personal prototype and pitch. It runs **in batch, after the game**. Nothing needs to run live.
+This is a personal prototype and pitch. It runs **in batch, after the game**. Nothing needs to run live.
 
 ---
 
@@ -21,7 +21,7 @@ This is an personal prototype and pitch. It runs **in batch, after the game**. N
 | Where does the game data come from? | The **MLB Stats API** (`https://statsapi.mlb.com`). Free, no key needed. |
 | Has this been done before? | Pieces of it, but no public project links comment-level sentiment to specific plays and win probability with player-level breakdown. Nothing for MLB. |
 
-**Licensing note:** Both MLB Stats API data and Reddit data are fine for an internal prototype or demo. Neither should go into a commercial product without a license or legal sign-off. Keep this project internal.
+**Licensing note:** Both MLB Stats API data and Reddit data are fine for an internal prototype or demo. Neither should go into a commercial product without a license or legal sign-off. Keep this project non-commercial.
 
 **Seasonal caveat:** r/baseball game threads are nearly empty during the regular season. They're only busy in the postseason. For regular-season games, use team subreddits.
 
